@@ -1,7 +1,9 @@
+import datetime
+
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from .models import Author, Book, Member, Loan
-from .serializers import AuthorSerializer, BookSerializer, MemberSerializer, LoanSerializer
+from .serializers import AuthorSerializer, BookSerializer, MemberSerializer, LoanSerializer, ExtendDueDateSerializer
 from rest_framework.decorators import action
 from django.utils import timezone
 from .tasks import send_loan_notification
@@ -11,7 +13,7 @@ class AuthorViewSet(viewsets.ModelViewSet):
     serializer_class = AuthorSerializer
 
 class BookViewSet(viewsets.ModelViewSet):
-    queryset = Book.objects.all()
+    queryset = Book.objects.all().select_related('author')
     serializer_class = BookSerializer
 
     @action(detail=True, methods=['post'])
@@ -35,7 +37,7 @@ class BookViewSet(viewsets.ModelViewSet):
         book = self.get_object()
         member_id = request.data.get('member_id')
         try:
-            loan = Loan.objects.get(book=book, member__id=member_id, is_returned=False)
+            loan = Loan.objects.get(book=book, member_id=member_id, is_returned=False)
         except Loan.DoesNotExist:
             return Response({'error': 'Active loan does not exist.'}, status=status.HTTP_400_BAD_REQUEST)
         loan.is_returned = True
@@ -49,6 +51,15 @@ class MemberViewSet(viewsets.ModelViewSet):
     queryset = Member.objects.all()
     serializer_class = MemberSerializer
 
+
 class LoanViewSet(viewsets.ModelViewSet):
-    queryset = Loan.objects.all()
+    queryset = Loan.objects.all().select_related('book', 'member')
     serializer_class = LoanSerializer
+
+    @action(detail=True, methods=['post'], url_path='extend_due_date', serializer_class=ExtendDueDateSerializer)
+    def extend_due_date(self, request, pk=None):
+        serializer = self.serializer_class(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({'status': serializer.data}, status=status.HTTP_200_OK)
+        return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)

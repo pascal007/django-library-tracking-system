@@ -1,3 +1,5 @@
+import datetime
+
 from rest_framework import serializers
 from .models import Author, Book, Member, Loan
 from django.contrib.auth.models import User
@@ -45,3 +47,25 @@ class LoanSerializer(serializers.ModelSerializer):
     class Meta:
         model = Loan
         fields = ['id', 'book', 'book_id', 'member', 'member_id', 'loan_date', 'return_date', 'is_returned']
+
+
+class ExtendDueDateSerializer(serializers.Serializer):
+    additional_days = serializers.IntegerField(min_value=1, required=True)
+    loan = serializers.PrimaryKeyRelatedField(queryset=Loan.objects.all(), required=True)
+
+    def validate(self, attrs):
+        # if attrs['due_date'] < datetime.datetime.now().date():
+        #     raise serializers.ValidationError('Date must not be before today')
+        # if attrs['due_date'] < attrs['loan'].due_date:
+        #     raise serializers.ValidationError('You can only extend due date')
+
+        if attrs['loan'].due_date < datetime.datetime.date():
+            raise serializers.ValidationError('Loan already overdue')
+        return attrs
+
+    def create(self, validated_data):
+        loan = validated_data.get('loan')
+        loan.due_date = loan.due_date + datetime.timedelta(days=validated_data.get('additional_days'))
+        loan.save()
+
+        return loan
